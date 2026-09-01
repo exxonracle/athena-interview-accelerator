@@ -23,6 +23,8 @@ export function InterviewRoom({ applicationId }: { applicationId: string }) {
   const [submitting, setSubmitting] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [audioReady, setAudioReady] = useState(false);
+  const [browserVoiceFallback, setBrowserVoiceFallback] = useState(false);
+  const [voiceNotice, setVoiceNotice] = useState('');
   const [inputMode, setInputMode] = useState<'voice' | 'typed'>('voice');
   const [elapsed, setElapsed] = useState(0);
   const [cameraOn, setCameraOn] = useState(false);
@@ -49,14 +51,25 @@ export function InterviewRoom({ applicationId }: { applicationId: string }) {
     const timer = window.setInterval(() => setElapsed(Math.floor((Date.now() - startedAt.current) / 1000)), 250);
     return () => window.clearInterval(timer);
   }, [recording]);
-  useEffect(() => () => { cameraStream.current?.getTracks().forEach((track) => track.stop()); if (audioUrl.current) URL.revokeObjectURL(audioUrl.current); }, []);
+  useEffect(() => () => { cameraStream.current?.getTracks().forEach((track) => track.stop()); if (audioUrl.current) URL.revokeObjectURL(audioUrl.current); window.speechSynthesis?.cancel(); }, []);
 
   const current = data?.interview.questions.find((question) => !question.answer) ?? data?.interview.questions.at(-1);
+  const speakWithBrowser = useCallback((text: string) => new Promise<void>((resolve, reject) => {
+    if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') { reject(new Error('Question audio could not be generated. Read the visible question or continue with typed input.')); return; }
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.92;
+    utterance.pitch = 1;
+    utterance.onend = () => { setSpeaking(false); resolve(); };
+    utterance.onerror = () => { setSpeaking(false); reject(new Error('Question audio could not be played. You can continue with the visible question.')); };
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  }), []);
   const speakQuestion = useCallback(async () => {
     if (!current || speaking) return;
     setError(''); setSpeaking(true);
     try {
       if (audioReady && audioRef.current) { await audioRef.current.play(); return; }
+      if (browserVoiceFallback) { await speakWithBrowser(current.question); return; }
       const response = await fetch('/api/audio/speech', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: current.question }) });
       if (!response.ok) { const body = await response.json() as { error?: string }; throw new Error(body.error || 'Question audio could not be generated.'); }
       if (audioUrl.current) URL.revokeObjectURL(audioUrl.current);
@@ -65,8 +78,15 @@ export function InterviewRoom({ applicationId }: { applicationId: string }) {
       audio.onended = () => setSpeaking(false);
       audio.onerror = () => { setSpeaking(false); setError('Question audio could not be played. You can continue with the visible question.'); };
       audioRef.current = audio; setAudioReady(true); await audio.play();
-    } catch (cause) { setSpeaking(false); setError(cause instanceof Error ? cause.message : 'Question audio could not be played.'); }
-  }, [audioReady, current, speaking]);
+    } catch (cause) {
+      if ('speechSynthesis' in window) {
+        setBrowserVoiceFallback(true);
+        setVoiceNotice('Groq speech is unavailable, so Athena is using your browser’s built-in voice.');
+        try { await speakWithBrowser(current.question); return; } catch { /* fall through to the visible-question fallback */ }
+      }
+      setSpeaking(false); setError(cause instanceof Error ? cause.message : 'Question audio could not be played.');
+    }
+  }, [audioReady, browserVoiceFallback, current, speakWithBrowser, speaking]);
 
   useEffect(() => { setAnswer(''); setElapsed(0); setAudioReady(false); if (current) speakQuestion().catch(() => undefined); }, [current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -121,7 +141,7 @@ export function InterviewRoom({ applicationId }: { applicationId: string }) {
         <div className="mb-6 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center"><div className="flex items-center gap-2">{levels.map((level, index) => { const activeIndex = levels.indexOf(data.interview.currentLevel); return <div key={level} className="flex flex-1 items-center lg:flex-none"><span className={`flex h-8 items-center gap-2 rounded-full px-3 text-xs font-semibold ${index === activeIndex ? 'bg-[#e6bd72] text-[#15203b]' : index < activeIndex ? 'bg-emerald-400/12 text-emerald-200' : 'bg-white/5 text-white/35'}`}>{index < activeIndex ? <Check className="size-3.5" /> : <span>{index + 1}</span>}<span className="hidden sm:inline">{levelLabels[level]}</span></span>{index < levels.length - 1 && <span className={`mx-2 h-px w-5 ${index < activeIndex ? 'bg-emerald-300/50' : 'bg-white/10'}`} />}</div>; })}</div><div className="flex items-center gap-3 text-xs text-white/55"><span>Question {current.sequence} · {completedQuestions} answered</span><Progress value={Math.min(100, (current.sequence / 12) * 100)} className="w-32 [&_[data-slot=progress-track]]:bg-white/10 [&_[data-slot=progress-indicator]]:bg-[#e6bd72]" /></div></div>
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
           <section className="flex min-h-[690px] flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#101e3f] shadow-2xl shadow-black/20">
-            <div className="flex min-h-72 flex-col items-center justify-center border-b border-white/10 bg-[radial-gradient(circle_at_50%_20%,rgba(89,77,180,0.28),transparent_60%)] px-6 py-10 text-center"><div className={`relative mb-6 grid size-24 place-items-center rounded-[30px] border border-[#e6bd72]/25 bg-gradient-to-br from-[#5d51a7] to-[#283563] shadow-[0_0_55px_rgba(140,117,221,0.2)] ${speaking ? 'athena-speaking' : ''}`}><Sparkles className="size-9 text-[#f1d69c]" />{speaking && <span className="absolute -inset-3 rounded-[36px] border border-[#e6bd72]/25" />}</div><div className="mb-4 flex items-center gap-2"><Badge className="bg-white/8 text-white/65">{levelLabels[current.level]}</Badge><Badge className="bg-white/8 text-white/65">Difficulty {current.difficulty}/5</Badge></div><h1 className="max-w-3xl text-xl leading-8 font-medium tracking-[-0.015em] sm:text-2xl sm:leading-9">“{current.question}”</h1><div className="mt-5 flex items-center gap-2"><Button variant="outline" onClick={speakQuestion} disabled={speaking} className="border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white">{speaking ? <><AudioLines className="animate-pulse" /> Speaking…</> : audioReady ? <><RotateCcw /> Replay question</> : <><Volume2 /> Hear question</>}</Button></div><p className="mt-3 text-[11px] text-white/35">Athena’s voice is AI-generated.</p></div>
+            <div className="flex min-h-72 flex-col items-center justify-center border-b border-white/10 bg-[radial-gradient(circle_at_50%_20%,rgba(89,77,180,0.28),transparent_60%)] px-6 py-10 text-center"><div className={`relative mb-6 grid size-24 place-items-center rounded-[30px] border border-[#e6bd72]/25 bg-gradient-to-br from-[#5d51a7] to-[#283563] shadow-[0_0_55px_rgba(140,117,221,0.2)] ${speaking ? 'athena-speaking' : ''}`}><Sparkles className="size-9 text-[#f1d69c]" />{speaking && <span className="absolute -inset-3 rounded-[36px] border border-[#e6bd72]/25" />}</div><div className="mb-4 flex items-center gap-2"><Badge className="bg-white/8 text-white/65">{levelLabels[current.level]}</Badge><Badge className="bg-white/8 text-white/65">Difficulty {current.difficulty}/5</Badge></div><h1 className="max-w-3xl text-xl leading-8 font-medium tracking-[-0.015em] sm:text-2xl sm:leading-9">“{current.question}”</h1><div className="mt-5 flex items-center gap-2"><Button variant="outline" onClick={speakQuestion} disabled={speaking} className="border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white">{speaking ? <><AudioLines className="animate-pulse" /> Speaking…</> : audioReady || browserVoiceFallback ? <><RotateCcw /> Replay question</> : <><Volume2 /> Hear question</>}</Button></div><p className="mt-3 text-[11px] text-white/35">Athena’s voice is AI-generated.</p>{voiceNotice && <p className="mt-2 text-[11px] text-amber-200/75">{voiceNotice}</p>}</div>
             <div className="flex flex-1 flex-col p-5 sm:p-7"><div className="mb-4 flex items-center justify-between"><div><p className="text-sm font-semibold">Your answer</p><p className="mt-1 text-xs text-white/45">Record, review the transcript, then submit.</p></div><div className="flex rounded-lg bg-white/5 p-1"><button onClick={() => setInputMode('voice')} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs ${inputMode === 'voice' ? 'bg-white/10 text-white' : 'text-white/45'}`}><Mic className="size-3.5" /> Voice</button><button onClick={() => setInputMode('typed')} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs ${inputMode === 'typed' ? 'bg-white/10 text-white' : 'text-white/45'}`}><Keyboard className="size-3.5" /> Type</button></div></div>
               <div className="relative flex-1"><Textarea value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder={inputMode === 'voice' ? 'Your transcript will appear here. You can edit it before submitting.' : 'Type your answer here…'} className="h-full min-h-48 resize-none border-white/10 bg-[#09142e]/55 p-4 text-base leading-7 text-white placeholder:text-white/25 focus-visible:border-[#e6bd72]/50 focus-visible:ring-[#e6bd72]/10" /></div>
               {error && <div role="alert" className="mt-4 flex gap-2 rounded-xl border border-rose-300/15 bg-rose-300/[0.07] px-4 py-3 text-sm text-rose-100"><CircleAlert className="mt-0.5 size-4 shrink-0" />{error}</div>}

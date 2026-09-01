@@ -30,8 +30,8 @@ Generic mock interviews rarely answer the question a candidate actually has: “
 - Explicit, persistent interview state machine.
 - Three adaptive interview levels with 9–12 questions total.
 - Dynamic difficulty, competency coverage, claim verification, and follow-ups.
-- Browser microphone recording and editable OpenAI transcription.
-- OpenAI-generated interviewer speech with replay controls.
+- Browser microphone recording and editable Groq Whisper transcription.
+- Groq Orpheus-generated interviewer speech with replay controls.
 - Typed-answer accessibility fallback.
 - Optional local-only camera preview; no facial or emotion inference.
 - Speaking duration, word count, and filler-word signals.
@@ -45,17 +45,17 @@ Generic mock interviews rarely answer the question a candidate actually has: “
 Browser (React 19 + Tailwind + shadcn/ui)
   │
   ├── multipart documents ──► extraction route ──► unpdf / mammoth
-  ├── recorded audio ───────► transcription route ──► OpenAI Audio API
-  ├── question playback ◄─── speech route ◄──────── OpenAI Audio API
+  ├── recorded audio ───────► transcription route ──► Groq Whisper API
+  ├── question playback ◄─── speech route ◄──────── Groq Orpheus API
   │
   └── application/interview APIs
           │
-          ├── AI service modules ──► OpenAI Responses API + Zod schemas
+          ├── AI service modules ──► Groq Responses API + Zod schemas
           ├── deterministic scoring/state logic
           └── Drizzle ORM ──► Cloudflare D1 (SQLite)
 ```
 
-The UI never receives `OPENAI_API_KEY`. Uploaded bytes and recordings are processed transiently; Athena persists normalized source text, transcripts, evaluation evidence, and scores, not original document or audio blobs.
+The UI never receives `GROQ_API_KEY`. Uploaded bytes and recordings are processed transiently; Athena persists normalized source text, transcripts, evaluation evidence, and scores, not original document or audio blobs.
 
 ### Technology stack
 
@@ -63,7 +63,7 @@ The UI never receives `OPENAI_API_KEY`. Uploaded bytes and recordings are proces
 - Tailwind CSS 4, shadcn/ui primitives, Lucide icons, and accessible semantic HTML.
 - Cloudflare Sites/Workers runtime.
 - Drizzle ORM and Cloudflare D1 (SQLite-compatible).
-- OpenAI TypeScript SDK, Responses API Structured Outputs, Audio Transcriptions, and Speech.
+- Groq's OpenAI-compatible Responses, Whisper transcription, and Orpheus speech APIs through the server-side OpenAI TypeScript SDK.
 - Zod for all AI and request validation.
 - `unpdf` for serverless PDF extraction and `mammoth` for DOCX.
 - Vitest for deterministic unit tests and Oxlint for linting.
@@ -88,7 +88,7 @@ tests/                         # scoring, state-machine, and document tests
 
 ## AI and LLM approach
 
-Every AI operation has a small, single-purpose module and a strict Zod response schema. Model calls run server-side, use Structured Outputs, disable OpenAI response storage, and retry once on malformed or transient failure. There are no hidden hardcoded candidate examples and no fabricated fallback analyses.
+Every AI operation has a small, single-purpose module and a strict Zod response schema. Model calls run server-side against Groq's fixed API origin, use Responses API Structured Outputs, validate the parsed result again with Zod, and retry once on malformed or transient failure. There are no hidden hardcoded candidate examples and no fabricated fallback analyses.
 
 ### Role analysis
 
@@ -164,13 +164,13 @@ Readiness begins with `65% interview performance + 35% Job Fit`. Athena then sub
 
 ## Voice implementation
 
-The browser records supported Opus/WebM or MP4 audio through `MediaRecorder`, displays permission and compatibility errors, and automatically sends the completed blob to the server-only transcription endpoint. The candidate can edit the transcript before submitting it. Each new question is synthesized by `gpt-4o-mini-tts` using the `cedar` voice and can be replayed. The interface clearly discloses that Athena’s voice is AI-generated.
+The browser records supported Opus/WebM or MP4 audio through `MediaRecorder`, displays permission and compatibility errors, and automatically sends the completed blob to the server-only transcription endpoint. Groq's `whisper-large-v3-turbo` transcribes the response, and the candidate can edit the transcript before submitting it. Each new question is synthesized as WAV audio by `canopylabs/orpheus-v1-english` using the `troy` voice and can be replayed. If the Groq organization has not accepted the Orpheus model terms or speech generation is temporarily unavailable, Athena transparently uses the browser speech engine so question playback remains operational. The interface clearly discloses that Athena’s voice is AI-generated.
 
 Voice remains primary; keyboard input is an accessibility and failure fallback. Camera preview is optional and local to the browser.
 
 ## Local setup
 
-Requirements: Node.js 22.13 or later and an OpenAI API key with access to the configured models.
+Requirements: Node.js 22.13 or later and a Groq API key with access to the configured models.
 
 ```bash
 npm install
@@ -180,7 +180,7 @@ cp .env.example .env
 Set your secret in `.env`:
 
 ```dotenv
-OPENAI_API_KEY=your_key_here
+GROQ_API_KEY=your_key_here
 ```
 
 Then run:
@@ -207,8 +207,8 @@ Athena is configured for Cloudflare Sites with logical D1 binding `DB` in `.open
 
 1. Authenticate the Sites/Cloudflare deployment tooling.
 2. Create or connect the hosted D1 database through Sites.
-3. Add `OPENAI_API_KEY` as a hosted runtime secret, never a client variable.
-4. Optionally set `OPENAI_TEXT_MODEL` and canonical `SITE_URL`.
+3. Add `GROQ_API_KEY` as a hosted runtime secret, never a client variable.
+4. Optionally set `GROQ_TEXT_MODEL`, `GROQ_STT_MODEL`, `GROQ_TTS_MODEL`, `GROQ_TTS_VOICE`, and canonical `SITE_URL`.
 5. Deploy the generated production build through Sites.
 6. Run a real JD/resume/voice smoke test against the deployed HTTPS origin.
 
@@ -228,7 +228,8 @@ The committed Drizzle migration creates all required tables and indexes.
 - English is the optimized interview and speech language.
 - Scanned/image-only PDFs require OCR before upload.
 - The interview is sequential rather than low-latency realtime duplex audio.
-- A live OpenAI smoke test requires the deployer’s API key and incurs API usage.
+- Groq Orpheus speech requires one-time model-terms acceptance by the Groq organization administrator; browser speech is the automatic fallback until then.
+- A live Groq smoke test requires the deployer’s API key, is subject to Groq rate limits, and may incur API usage.
 - Camera video is preview-only and intentionally excluded from scoring.
 
 ## Demo-video walkthrough
