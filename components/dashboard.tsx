@@ -73,10 +73,11 @@ export function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState(0);
   const [error, setError] = useState('');
+  const [retryApplicationId, setRetryApplicationId] = useState<string | null>(null);
   const [recent, setRecent] = useState<{ id: string; roleTitle?: string; status: string } | null>(null);
   const ready = (jdText.trim().length >= 80 || jdFile) && (resumeText.trim().length >= 80 || resumeFile);
 
-  useEffect(() => { fetch('/api/applications').then((res) => res.ok ? res.json() as Promise<{ application: { id: string; roleTitle?: string; status: string } | null }> : null).then((data) => { const application = data?.application; setRecent(application && ['READY', 'SCREENING', 'COMPETENCY', 'DEEP_DIVE', 'COMPLETED'].includes(application.status) ? application : null); }).catch(() => undefined); }, []);
+  useEffect(() => { fetch('/api/applications').then((res) => res.ok ? res.json() as Promise<{ application: { id: string; roleTitle?: string; status: string } | null }> : null).then((data) => setRecent(data?.application ?? null)).catch(() => undefined); }, []);
   useEffect(() => {
     if (!loading) return;
     const timer = window.setInterval(() => setStage((value) => Math.min(value + 1, loadingStages.length - 1)), 4500);
@@ -92,11 +93,29 @@ export function Dashboard() {
     if (resumeFile) form.set('resumeFile', resumeFile);
     try {
       const response = await fetch('/api/applications', { method: 'POST', body: form });
+      const body = await response.json() as { applicationId?: string; error?: string; retryable?: boolean };
+      if (!response.ok || !body.applicationId) {
+        if (body.applicationId && body.retryable) setRetryApplicationId(body.applicationId);
+        throw new Error(body.error || 'Analysis could not be completed.');
+      }
+      window.location.assign(`/applications/${body.applicationId}/analysis`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Analysis could not be completed.');
+      setLoading(false);
+    }
+  }
+
+  async function retryAnalysis(applicationId = retryApplicationId || recent?.id) {
+    if (!applicationId || loading) return;
+    setLoading(true); setError(''); setStage(0);
+    try {
+      const response = await fetch(`/api/applications/${applicationId}/retry`, { method: 'POST' });
       const body = await response.json() as { applicationId?: string; error?: string };
       if (!response.ok || !body.applicationId) throw new Error(body.error || 'Analysis could not be completed.');
       window.location.assign(`/applications/${body.applicationId}/analysis`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Analysis could not be completed.');
+      setRetryApplicationId(applicationId);
       setLoading(false);
     }
   }
@@ -106,10 +125,10 @@ export function Dashboard() {
       {loading && <div className="fixed inset-0 z-50 grid place-items-center bg-[#0a1530]/75 p-6 backdrop-blur-md"><div className="w-full max-w-md rounded-3xl border border-white/15 bg-[#0f1c3d] p-8 text-center text-white shadow-2xl"><span className="mx-auto mb-5 grid size-14 place-items-center rounded-2xl bg-white/10"><LoaderCircle className="size-7 animate-spin text-[#e6bd72]" /></span><h2 className="text-xl font-semibold">Athena is reading the evidence</h2><p className="mt-2 text-sm text-white/65">{loadingStages[stage]}</p><div className="mt-7 flex gap-2">{loadingStages.map((_, index) => <span key={index} className={`h-1.5 flex-1 rounded-full ${index <= stage ? 'bg-[#e6bd72]' : 'bg-white/10'}`} />)}</div><p className="mt-5 text-xs text-white/45">Keep this page open. Your documents are processed privately.</p></div></div>}
       <header className="border-b border-border/70 bg-background/90 backdrop-blur-xl"><div className="mx-auto flex h-18 max-w-7xl items-center justify-between px-5 sm:px-8"><Link href="/" className="flex items-center gap-3" aria-label="Athena home"><span className="athena-mark">A</span><span><strong className="block font-heading text-[15px] tracking-[0.17em]">ATHENA</strong><span className="hidden text-[10px] uppercase tracking-[0.15em] text-muted-foreground sm:block">Interview accelerator</span></span></Link><div className="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck className="size-4 text-emerald-600" /><span className="hidden sm:inline">Your documents stay private</span></div></div></header>
       <section className="mx-auto max-w-7xl px-5 pb-16 pt-10 sm:px-8 sm:pt-14">
-        {recent && <button onClick={() => window.location.assign(`/applications/${recent.id}/${recent.status === 'COMPLETED' ? 'results' : recent.status === 'READY' ? 'analysis' : 'interview'}`)} className="mb-6 flex w-full items-center justify-between rounded-xl border border-primary/15 bg-card/70 px-4 py-3 text-left text-sm shadow-sm"><span><strong>Continue your latest preparation</strong><span className="ml-2 text-muted-foreground">{recent.roleTitle || 'Interview application'}</span></span><ArrowRight className="size-4 text-primary" /></button>}
+        {recent && <button onClick={() => ['ROLE_ANALYSIS', 'CANDIDATE_ANALYSIS'].includes(recent.status) ? retryAnalysis(recent.id) : window.location.assign(`/applications/${recent.id}/${recent.status === 'COMPLETED' ? 'results' : recent.status === 'READY' ? 'analysis' : 'interview'}`)} className="mb-6 flex w-full items-center justify-between rounded-xl border border-primary/15 bg-card/70 px-4 py-3 text-left text-sm shadow-sm"><span><strong>{['ROLE_ANALYSIS', 'CANDIDATE_ANALYSIS'].includes(recent.status) ? 'Resume your saved analysis' : 'Continue your latest preparation'}</strong><span className="ml-2 text-muted-foreground">{recent.roleTitle || 'Interview application'}</span></span><ArrowRight className="size-4 text-primary" /></button>}
         <div className="grid items-end gap-8 lg:grid-cols-[1fr_auto]"><div className="max-w-3xl"><Badge variant="outline" className="mb-5 h-7 gap-2 border-primary/15 bg-primary/[0.04] px-3 text-primary"><Sparkles className="size-3.5" /> Personalised interview intelligence</Badge><h1 className="font-heading text-4xl leading-[1.05] font-semibold tracking-[-0.045em] sm:text-5xl lg:text-[58px]">Prepare for the interview you’re <span className="text-primary">actually facing.</span></h1><p className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">Athena studies the role and your experience, then conducts a rigorous voice interview that adapts to every answer.</p></div><div className="hidden min-w-80 rounded-2xl border border-border/70 bg-card/70 p-5 shadow-sm lg:block"><p className="mb-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Your path to readiness</p><div className="flex items-center">{steps.map((item, index) => <div key={item} className="flex flex-1 items-center last:flex-none"><span className="flex size-7 items-center justify-center rounded-full bg-primary/8 text-[11px] font-semibold text-primary">{index + 1}</span>{index < steps.length - 1 && <span className="mx-2 h-px flex-1 bg-border" />}</div>)}</div><div className="mt-2 flex justify-between text-[10px] text-muted-foreground">{steps.map((item) => <span key={item}>{item}</span>)}</div></div></div>
         <div className="mt-10 grid gap-5 lg:grid-cols-2"><DocumentInput kind="jd" text={jdText} setText={setJdText} file={jdFile} setFile={setJdFile} /><DocumentInput kind="resume" text={resumeText} setText={setResumeText} file={resumeFile} setFile={setResumeFile} /></div>
-        {error && <div role="alert" className="mt-5 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</div>}
+        {error && <div role="alert" className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"><span>{error}</span>{retryApplicationId && <Button size="sm" variant="outline" onClick={() => retryAnalysis()} disabled={loading}>Retry saved analysis</Button>}</div>}
         <div className="mt-6 flex flex-col items-center justify-between gap-4 rounded-2xl border border-primary/12 bg-primary/[0.035] p-5 sm:flex-row sm:px-6"><div><p className="text-sm font-semibold">{ready ? 'Your evidence is ready for Athena' : 'Add both documents to begin'}</p><p className="mt-1 text-xs text-muted-foreground">Athena will extract role requirements, compare evidence, and build your interview plan.</p></div><Button size="lg" className="h-11 w-full rounded-xl px-5 shadow-lg shadow-primary/15 sm:w-auto" disabled={!ready || loading} onClick={submit}>Start analysis <ArrowRight /></Button></div>
       </section>
     </main>

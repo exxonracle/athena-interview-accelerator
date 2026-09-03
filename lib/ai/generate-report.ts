@@ -15,6 +15,6 @@ export function generateReportNarrative(input: {
     reportNarrativeSchema,
     `You are Athena's interview coach. Produce specific, actionable feedback grounded only in the supplied job fit and interview evidence. Do not invent weaknesses or strengths. Rank preparation gaps by role criticality and demonstrated interview weakness. Each action should be practical before a real interview.`,
     `EVIDENCE CONTEXT: ${JSON.stringify(compactInterviewContext(input))}\nINTERVIEW EVIDENCE: ${JSON.stringify(input.questions.slice(-3))}`,
-    { model: getGroqConfig().interviewModel },
+    { model: getGroqConfig().interviewModel, fallbackModel: getGroqConfig().textModel, maxOutputTokens: 2_400 },
   );
 }

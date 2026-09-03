@@ -172,7 +172,7 @@ Each level asks exactly one question, for three questions total. The Screening a
 
 ### Latency strategy
 
-Role and candidate analysis use `openai/gpt-oss-120b` for extraction quality. Interactive interview turns and the final coaching narrative use `openai/gpt-oss-20b`, which Groq positions as its low-latency production model; the final detailed evaluation uses 120B for schema reliability. Athena also removes duplicated context, limits raw JD/resume excerpts to 2,500 characters each, and retains only the two relevant prior exchanges. The first two answers combine evaluation and next-question generation in one request; the final answer runs its evaluation and report requests in parallel on separate model capacity. Rate-limit retries respect Groq's requested delay instead of retrying immediately.
+Role and candidate analysis use `openai/gpt-oss-120b` for extraction quality. Interactive interview turns and the final coaching narrative use `openai/gpt-oss-20b`, which Groq positions as its low-latency production model; the final detailed evaluation uses 120B for schema reliability. Athena also removes duplicated context, limits raw JD/resume excerpts to 2,500 characters each, and retains only the two relevant prior exchanges. The first two answers combine evaluation and next-question generation in one request; the final answer runs its evaluation and report requests in parallel on separate model capacity. If an interactive model returns malformed structured output or has a transient upstream failure, Athena automatically retries with the stronger 120B model. Rate-limit retries respect Groq's requested delay instead of retrying immediately, and persisted JD/resume analysis can be resumed without re-uploading documents.
 
 ## Scoring methodology
 

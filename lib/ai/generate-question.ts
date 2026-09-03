@@ -32,6 +32,6 @@ export function generateQuestion(input: {
     interviewQuestionSchema,
     `You are Athena, a supportive and fair human-like interviewer. Generate exactly one personalized question grounded in the supplied role or resume evidence. ${levelGuidance[input.level]} ${approachableQuestionStyle} Use the latest evaluation to decide whether a direct follow-up is more useful than a new competency. Never repeat a topic unless intentionally deepening it. Never reveal scoring, expected evidence, or internal evaluation. At difficulty ${input.difficulty}/5, keep the complexity accessible for an early-career candidate.`,
     `LEVEL: ${input.level}\nDIFFICULTY: ${input.difficulty}/5\nCOVERED: ${JSON.stringify(input.coverage)}\nEVIDENCE CONTEXT: ${JSON.stringify(compactInterviewContext(input))}\nHISTORY: ${JSON.stringify(input.history.slice(-3))}`,
-    { model: getGroqConfig().interviewModel, maxOutputTokens: 1_200 },
+    { model: getGroqConfig().interviewModel, fallbackModel: getGroqConfig().textModel, maxOutputTokens: 1_200 },
   );
 }

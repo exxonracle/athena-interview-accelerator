@@ -19,6 +19,7 @@ export function InterviewRoom({ applicationId }: { applicationId: string }) {
   const [data, setData] = useState<InterviewData | null>(null);
   const [answer, setAnswer] = useState('');
   const [error, setError] = useState('');
+  const [retryableAnswer, setRetryableAnswer] = useState(false);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -36,6 +37,7 @@ export function InterviewRoom({ applicationId }: { applicationId: string }) {
   const audioUrl = useRef<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStream = useRef<MediaStream | null>(null);
+  const submissionId = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/applications/${applicationId}`);
@@ -123,11 +125,16 @@ export function InterviewRoom({ applicationId }: { applicationId: string }) {
   }
   async function submitAnswer() {
     if (!current || answer.trim().length < 2 || submitting) return;
-    setSubmitting(true); setError('');
+    setSubmitting(true); setError(''); setRetryableAnswer(false);
     try {
-      const response = await fetch(`/api/interviews/${data!.interview.id}/answers`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ questionId: current.id, transcript: answer, clientSubmissionId: crypto.randomUUID(), inputMode, durationMs: elapsed * 1000 }) });
-      const body = await response.json() as { completed?: boolean; error?: string };
-      if (!response.ok) throw new Error(body.error || 'Your answer could not be submitted.');
+      submissionId.current ??= crypto.randomUUID();
+      const response = await fetch(`/api/interviews/${data!.interview.id}/answers`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ questionId: current.id, transcript: answer, clientSubmissionId: submissionId.current, inputMode, durationMs: elapsed * 1000 }) });
+      const body = await response.json() as { completed?: boolean; duplicate?: boolean; error?: string; code?: string };
+      if (!response.ok) {
+        setRetryableAnswer(body.code === 'AI_RESPONSE_FAILED' || body.code === 'AI_RATE_LIMITED');
+        throw new Error(body.error || 'Your answer could not be submitted.');
+      }
+      submissionId.current = null;
       if (body.completed) window.location.assign(`/applications/${applicationId}/results`); else await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Your answer could not be submitted.'); } finally { setSubmitting(false); }
   }
@@ -145,7 +152,7 @@ export function InterviewRoom({ applicationId }: { applicationId: string }) {
             <div className="flex min-h-72 flex-col items-center justify-center border-b border-white/10 bg-[radial-gradient(circle_at_50%_20%,rgba(89,77,180,0.28),transparent_60%)] px-6 py-10 text-center"><div className={`relative mb-6 grid size-24 place-items-center rounded-[30px] border border-[#e6bd72]/25 bg-gradient-to-br from-[#5d51a7] to-[#283563] shadow-[0_0_55px_rgba(140,117,221,0.2)] ${speaking ? 'athena-speaking' : ''}`}><Sparkles className="size-9 text-[#f1d69c]" />{speaking && <span className="absolute -inset-3 rounded-[36px] border border-[#e6bd72]/25" />}</div><div className="mb-4 flex items-center gap-2"><Badge className="bg-white/8 text-white/65">{levelLabels[current.level]}</Badge><Badge className="bg-white/8 text-white/65">Difficulty {current.difficulty}/5</Badge></div><h1 className="max-w-3xl text-xl leading-8 font-medium tracking-[-0.015em] sm:text-2xl sm:leading-9">“{current.question}”</h1><div className="mt-5 flex items-center gap-2"><Button variant="outline" onClick={speakQuestion} disabled={speaking} className="border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white">{speaking ? <><AudioLines className="animate-pulse" /> Speaking…</> : audioReady || browserVoiceFallback ? <><RotateCcw /> Replay question</> : <><Volume2 /> Hear question</>}</Button></div><p className="mt-3 text-[11px] text-white/35">Athena’s voice is AI-generated.</p>{voiceNotice && <p className="mt-2 text-[11px] text-amber-200/75">{voiceNotice}</p>}</div>
             <div className="flex flex-1 flex-col p-5 sm:p-7"><div className="mb-4 flex items-center justify-between"><div><p className="text-sm font-semibold">Your answer</p><p className="mt-1 text-xs text-white/45">Record, review the transcript, then submit.</p></div><div className="flex rounded-lg bg-white/5 p-1"><button onClick={() => setInputMode('voice')} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs ${inputMode === 'voice' ? 'bg-white/10 text-white' : 'text-white/45'}`}><Mic className="size-3.5" /> Voice</button><button onClick={() => setInputMode('typed')} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs ${inputMode === 'typed' ? 'bg-white/10 text-white' : 'text-white/45'}`}><Keyboard className="size-3.5" /> Type</button></div></div>
               <div className="relative flex-1"><Textarea value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder={inputMode === 'voice' ? 'Your transcript will appear here. You can edit it before submitting.' : 'Type your answer here…'} className="h-full min-h-48 resize-none border-white/10 bg-[#09142e]/55 p-4 text-base leading-7 text-white placeholder:text-white/25 focus-visible:border-[#e6bd72]/50 focus-visible:ring-[#e6bd72]/10" /></div>
-              {error && <div role="alert" className="mt-4 flex gap-2 rounded-xl border border-rose-300/15 bg-rose-300/[0.07] px-4 py-3 text-sm text-rose-100"><CircleAlert className="mt-0.5 size-4 shrink-0" />{error}</div>}
+              {error && <div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-300/15 bg-rose-300/[0.07] px-4 py-3 text-sm text-rose-100"><span className="flex gap-2"><CircleAlert className="mt-0.5 size-4 shrink-0" />{error}</span>{retryableAnswer && <Button size="sm" variant="outline" onClick={submitAnswer} disabled={submitting}>Retry answer</Button>}</div>}
               <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3">{recording ? <Button onClick={stopRecording} className="h-11 rounded-xl bg-rose-500 px-5 text-white hover:bg-rose-400"><Pause /> Stop recording</Button> : <Button onClick={startRecording} disabled={transcribing || submitting} variant="outline" className="h-11 rounded-xl border-white/15 bg-white/5 px-5 text-white hover:bg-white/10 hover:text-white">{transcribing ? <LoaderCircle className="animate-spin" /> : <Mic />} {transcribing ? 'Transcribing…' : 'Record answer'}</Button>}{recording && <span className="flex items-center gap-2 text-sm text-rose-200"><span className="size-2 animate-pulse rounded-full bg-rose-400" /> {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}</span>}</div><Button onClick={submitAnswer} disabled={answer.trim().length < 2 || recording || transcribing || submitting} className="h-11 rounded-xl bg-[#e6bd72] px-5 text-[#15203b] shadow-lg shadow-black/15 hover:bg-[#f0cf91]">{submitting ? <LoaderCircle className="animate-spin" /> : <Send />} {submitting ? 'Evaluating answer…' : 'Submit answer'}</Button></div>
             </div>
           </section>

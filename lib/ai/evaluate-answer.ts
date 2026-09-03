@@ -46,7 +46,7 @@ export function evaluateAnswerAndGenerateQuestion(input: AnswerTurnInput & { nex
     answerTurnSchema,
     `You are Athena's interview assessor and interviewer. First evaluate the current answer. ${evaluationRules} Set difficultyAdjustment from answer quality. Then generate exactly one personalized ${input.nextLevel} question grounded in the evidence. ${approachableQuestionStyle} After a strong answer, make the next question only one step harder and focus on a single practical reason or trade-off. After a weak answer, ask about one fundamental or invite a simple clarification. Because this compact interview has one question per level, target the most useful uncovered evidence without making the question broad. Do not reveal scoring or internal evaluation.`,
     `NEXT LEVEL: ${input.nextLevel}\nCOVERED: ${JSON.stringify(input.coverage)}\nTURN EVIDENCE: ${JSON.stringify(turnEvidence(input))}`,
-    { model: getGroqConfig().interviewModel },
+    { model: getGroqConfig().interviewModel, fallbackModel: getGroqConfig().textModel, maxOutputTokens: 2_400 },
   );
 }
 
