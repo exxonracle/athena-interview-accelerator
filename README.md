@@ -57,6 +57,53 @@ Browser (React 19 + Tailwind + shadcn/ui)
 
 The UI never receives `GROQ_API_KEY`. Uploaded bytes and recordings are processed transiently; Athena persists normalized source text, transcripts, evaluation evidence, and scores, not original document or audio blobs.
 
+## Hosted deployment: Cloudflare Workers
+
+Athena is deployed as a private Cloudflare Workers application through OpenAI Sites. The production app is available at:
+
+<https://athena-interview-accelerator.exxonracle805.chatgpt.site>
+
+At publication time the deployment uses owner-only access. Add the intended viewers through the Sites access controls before using it for a public demo or external testing.
+
+### Production architecture
+
+```text
+GitHub source
+  └── Vinext build
+        └── OpenAI Sites packaging and release management
+              └── Cloudflare Workers runtime
+                    ├── static React assets
+                    ├── server-side API routes and AI orchestration
+                    ├── Cloudflare D1 binding: DB
+                    └── outbound HTTPS calls to Groq APIs
+```
+
+| Runtime concern | Production implementation |
+| --- | --- |
+| Application runtime | Cloudflare Workers, using Vinext's Next-compatible App Router output |
+| Hosting/release workflow | OpenAI Sites packages the validated `dist/` output and deploys the saved release to Workers |
+| Database | Cloudflare D1, exposed to the application as the `DB` binding |
+| ORM/migrations | Drizzle ORM with committed SQL migrations in `drizzle/` |
+| AI, transcription, and speech | Server-side HTTPS requests to Groq; no API key reaches the browser |
+| Object storage | Not currently required; source documents and recordings are processed transiently and are not stored as blobs |
+| Worker compatibility | ESM output with `nodejs_compat`; no raw TCP sockets are used |
+
+### Hosted environment variables
+
+Configure runtime values in the Sites deployment settings, not in Git, client-side code, or `.openai/hosting.json`.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `GROQ_API_KEY` | Yes | Server-only Groq API credential |
+| `GROQ_TEXT_MODEL` | No | Structured analysis/evaluation model; defaults to `openai/gpt-oss-120b` |
+| `GROQ_INTERVIEW_MODEL` | No | Low-latency adaptive question model; defaults to `openai/gpt-oss-20b` |
+| `GROQ_STT_MODEL` | No | Speech-to-text model; defaults to `whisper-large-v3-turbo` |
+| `GROQ_TTS_MODEL` | No | Question speech model; defaults to `canopylabs/orpheus-v1-english` |
+| `GROQ_TTS_VOICE` | No | Orpheus voice; defaults to `troy` |
+| `SITE_URL` | Recommended | Canonical HTTPS production URL for social metadata |
+
+Never commit a `.env` file or a Groq key. Use `.env.example` only as the non-secret template for local development.
+
 ### Technology stack
 
 - Vinext/Next-compatible App Router, React 19, and TypeScript.
@@ -194,6 +241,15 @@ npm run dev
 
 Open the exact local URL printed by Vinext. D1 local state is stored by Wrangler under the ignored project cache.
 
+To run the production-shaped Worker locally after building:
+
+```bash
+npm run build
+npm run start
+```
+
+Wrangler uses the local D1 configuration from `vite.config.ts`; production bindings and secrets remain managed by Sites.
+
 ### Validation commands
 
 ```bash
@@ -206,16 +262,35 @@ npm run build
 
 ## Deployment
 
-Athena is configured for Cloudflare Sites with logical D1 binding `DB` in `.openai/hosting.json`.
+Athena is configured for OpenAI Sites on Cloudflare Workers with logical D1 binding `DB` in `.openai/hosting.json`. The config intentionally contains deployment bindings only; it must not contain secrets.
 
-1. Authenticate the Sites/Cloudflare deployment tooling.
-2. Create or connect the hosted D1 database through Sites.
-3. Add `GROQ_API_KEY` as a hosted runtime secret, never a client variable.
-4. Optionally set `GROQ_TEXT_MODEL`, `GROQ_INTERVIEW_MODEL`, `GROQ_STT_MODEL`, `GROQ_TTS_MODEL`, `GROQ_TTS_VOICE`, and canonical `SITE_URL`.
-5. Deploy the generated production build through Sites.
-6. Run a real JD/resume/voice smoke test against the deployed HTTPS origin.
+1. Push the validated source to the GitHub repository.
+2. Run `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
+3. Confirm the D1 binding is declared as `DB` in `.openai/hosting.json`; Sites provisions and wires the hosted resource.
+4. Add `GROQ_API_KEY` as a hosted runtime secret, never as a browser-visible value.
+5. Set optional model overrides and `SITE_URL` only when the defaults do not suit the deployment.
+6. Package the successful `dist/` output through Sites and save a version tied to the pushed Git commit.
+7. Deploy that saved version to Cloudflare Workers, respecting the intended access policy.
+8. Run a real JD/resume/voice smoke test against the deployed HTTPS origin.
 
 The committed Drizzle migration creates all required tables and indexes.
+
+### GitHub workflow
+
+The repository is the source of truth for the application. Keep the following out of commits: `.env`, local Wrangler state, D1 data, API keys, uploaded documents, recordings, and generated build artifacts.
+
+```bash
+git pull --rebase
+npm run lint
+npm run typecheck
+npm test
+npm run build
+git add <changed-files>
+git commit -m "Describe the change"
+git push
+```
+
+After a source update, create and deploy a new Sites version from that exact pushed commit. This keeps the live Worker release traceable to GitHub source.
 
 ## Privacy and robustness
 
