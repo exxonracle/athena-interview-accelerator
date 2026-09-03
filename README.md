@@ -63,6 +63,8 @@ Athena is deployed as a private Cloudflare Workers application through OpenAI Si
 
 <https://athena-interview-accelerator.exxonracle805.chatgpt.site>
 
+Source repository: <https://github.com/exxonracle/athena-interview-accelerator>
+
 At publication time the deployment uses owner-only access. Add the intended viewers through the Sites access controls before using it for a public demo or external testing.
 
 ### Production architecture
