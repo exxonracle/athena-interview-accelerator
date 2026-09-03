@@ -107,7 +107,7 @@ Athena generates only the initial question when a session starts. After the firs
 3. Updates competency coverage and difficulty.
 4. Transitions to the next level and generates exactly one question that targets the most valuable uncovered evidence.
 
-Screening tests motivation, ownership, communication, and basic fit. Competency adds applied technical and behavioural scenarios. Deep Dive challenges vague answers, metrics, trade-offs, edge cases, and inconsistencies.
+Screening tests motivation, ownership, communication, and basic fit. Competency asks for one practical example or decision. Deep Dive probes one important reason, metric, or trade-off. Every question is a single plain-language sentence, targets roughly 12–22 words, and avoids stacked sub-questions or long scenarios.
 
 ### Interview progression
 
@@ -119,7 +119,7 @@ SETUP → ROLE_ANALYSIS → CANDIDATE_ANALYSIS → READY
       → EVALUATING → COMPLETED
 ```
 
-Each level asks exactly one question, for three questions total. The Screening answer shapes the Competency question, and the Competency answer shapes the Deep Dive question. Difficulty is bounded by level and rises after strong answers or shifts toward fundamentals after weak answers. Existing sessions resume safely and adopt the shortened progression from their next submitted answer.
+Each level asks exactly one question, for three questions total. The Screening answer shapes the Competency question, and the Competency answer shapes the Deep Dive question. Difficulty stays approachable: Screening is bounded to levels 1–2, Competency to 1–3, and Deep Dive to 2–4. A strong answer raises difficulty by at most one step; a weak answer shifts toward one simpler fundamental. Existing sessions resume safely and adopt the updated style from their next generated question.
 
 ### Latency strategy
 

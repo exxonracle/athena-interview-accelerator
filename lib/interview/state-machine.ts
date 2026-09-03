@@ -30,7 +30,7 @@ export function nextLevel(level: InterviewLevel): InterviewLevel | null {
 }
 
 export function adjustDifficulty(current: number, evaluation: AnswerEvaluation, level: InterviewLevel) {
-  const bounds: Record<InterviewLevel, [number, number]> = { SCREENING: [1, 3], COMPETENCY: [2, 4], DEEP_DIVE: [3, 5] };
+  const bounds: Record<InterviewLevel, [number, number]> = { SCREENING: [1, 2], COMPETENCY: [1, 3], DEEP_DIVE: [2, 4] };
   const delta = evaluation.difficultyAdjustment === 'increase' ? 1 : evaluation.difficultyAdjustment === 'decrease' ? -1 : 0;
   return Math.max(bounds[level][0], Math.min(bounds[level][1], current + delta));
 }

@@ -8,6 +8,7 @@ import {
 } from './schemas';
 import { getGroqConfig, structuredResponse } from './client';
 import { compactInterviewContext } from './interview-context';
+import { approachableQuestionStyle } from './question-style';
 
 type AnswerTurnInput = {
   role: RoleAnalysis;
@@ -43,7 +44,7 @@ export function evaluateAnswerAndGenerateQuestion(input: AnswerTurnInput & { nex
   return structuredResponse(
     'answer_turn',
     answerTurnSchema,
-    `You are Athena's interview assessor and interviewer. First evaluate the current answer. ${evaluationRules} Set difficultyAdjustment from answer quality. Then generate exactly one concise ${input.nextLevel} question grounded in the evidence. Adapt it to the evaluation you just produced: increase technical depth or trade-offs after a strong answer; test fundamentals or clarify the gap after a weak answer. Because this compact interview has one question per level, the next question should maximize uncovered evidence. Do not reveal scoring or internal evaluation.`,
+    `You are Athena's interview assessor and interviewer. First evaluate the current answer. ${evaluationRules} Set difficultyAdjustment from answer quality. Then generate exactly one personalized ${input.nextLevel} question grounded in the evidence. ${approachableQuestionStyle} After a strong answer, make the next question only one step harder and focus on a single practical reason or trade-off. After a weak answer, ask about one fundamental or invite a simple clarification. Because this compact interview has one question per level, target the most useful uncovered evidence without making the question broad. Do not reveal scoring or internal evaluation.`,
     `NEXT LEVEL: ${input.nextLevel}\nCOVERED: ${JSON.stringify(input.coverage)}\nTURN EVIDENCE: ${JSON.stringify(turnEvidence(input))}`,
     { model: getGroqConfig().interviewModel },
   );

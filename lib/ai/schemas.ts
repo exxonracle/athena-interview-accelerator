@@ -80,7 +80,7 @@ export const jobFitSchema = z.object({
 export const interviewLevelSchema = z.enum(['SCREENING', 'COMPETENCY', 'DEEP_DIVE']);
 
 export const interviewQuestionSchema = z.object({
-  question: z.string().min(10),
+  question: z.string().min(10).max(220),
   competencyKeys: z.array(z.string().min(1)).min(1).max(4),
   primaryTopic: z.string().min(1),
   intent: z.string().min(1),

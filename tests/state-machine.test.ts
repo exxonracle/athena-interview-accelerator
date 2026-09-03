@@ -23,7 +23,8 @@ describe('interview state machine', () => {
   });
 
   it('bounds difficulty by interview level', () => {
-    expect(adjustDifficulty(3, evaluation, 'SCREENING')).toBe(3);
-    expect(adjustDifficulty(4, evaluation, 'DEEP_DIVE')).toBe(5);
+    expect(adjustDifficulty(2, evaluation, 'SCREENING')).toBe(2);
+    expect(adjustDifficulty(1, evaluation, 'COMPETENCY')).toBe(2);
+    expect(adjustDifficulty(4, evaluation, 'DEEP_DIVE')).toBe(4);
   });
 });

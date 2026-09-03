@@ -1,6 +1,7 @@
 import { interviewQuestionSchema, type CandidateAnalysis, type InterviewLevel, type JobFit, type RoleAnalysis } from './schemas';
 import { getGroqConfig, structuredResponse } from './client';
 import { compactInterviewContext } from './interview-context';
+import { approachableQuestionStyle } from './question-style';
 
 export type InterviewHistoryItem = {
   question: string;
@@ -22,14 +23,14 @@ export function generateQuestion(input: {
   history: InterviewHistoryItem[];
 }) {
   const levelGuidance: Record<InterviewLevel, string> = {
-    SCREENING: 'Test motivation, resume ownership, communication, relevant experience, goals, and basic role understanding.',
-    COMPETENCY: 'Test job-specific technical and behavioural competencies through applied scenarios, decisions, and project evidence.',
-    DEEP_DIVE: 'Challenge vague answers, probe metrics and ownership, test trade-offs and edge cases, introduce realistic constraints, and pursue inconsistencies.',
+    SCREENING: 'Ask about motivation, resume ownership, relevant experience, or basic role understanding.',
+    COMPETENCY: 'Ask for one practical example that tests an important job-specific competency.',
+    DEEP_DIVE: 'Probe one important detail, reason, metric, or trade-off from the candidate evidence.',
   };
   return structuredResponse(
     'interview_question',
     interviewQuestionSchema,
-    `You are Athena, a demanding but fair human-like interviewer. Generate exactly one concise question. It must be grounded in supplied role or resume evidence. ${levelGuidance[input.level]} Use the latest evaluation to decide whether a direct follow-up is more valuable than a new competency. Never repeat a topic unless intentionally deepening it. Never reveal scoring, expected evidence, or internal evaluation. At difficulty ${input.difficulty}/5, calibrate complexity without becoming obscure.`,
+    `You are Athena, a supportive and fair human-like interviewer. Generate exactly one personalized question grounded in the supplied role or resume evidence. ${levelGuidance[input.level]} ${approachableQuestionStyle} Use the latest evaluation to decide whether a direct follow-up is more useful than a new competency. Never repeat a topic unless intentionally deepening it. Never reveal scoring, expected evidence, or internal evaluation. At difficulty ${input.difficulty}/5, keep the complexity accessible for an early-career candidate.`,
     `LEVEL: ${input.level}\nDIFFICULTY: ${input.difficulty}/5\nCOVERED: ${JSON.stringify(input.coverage)}\nEVIDENCE CONTEXT: ${JSON.stringify(compactInterviewContext(input))}\nHISTORY: ${JSON.stringify(input.history.slice(-3))}`,
     { model: getGroqConfig().interviewModel, maxOutputTokens: 1_200 },
   );

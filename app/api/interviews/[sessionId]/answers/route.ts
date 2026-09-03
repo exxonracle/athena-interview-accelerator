@@ -107,7 +107,7 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
     const turn = await evaluateAnswerAndGenerateQuestion({ ...answerContext, nextLevel: followingLevel, coverage });
     const evaluation = turn.evaluation;
     const generated = turn.nextQuestion;
-    const baseDifficulty = followingLevel === 'COMPETENCY' ? 2 : 3;
+    const baseDifficulty = followingLevel === 'COMPETENCY' ? 1 : 2;
     const updatedDifficulty = adjustDifficulty(baseDifficulty, evaluation, followingLevel);
     await db.insert(interviewAnswers).values({ id: answerId, questionId: question.id, clientSubmissionId: body.clientSubmissionId, transcript: body.transcript, inputMode: body.inputMode, durationMs: body.durationMs ?? null, wordCount: body.transcript.trim().split(/\s+/).length, fillerCount: body.transcript.match(fillers)?.length ?? 0, submittedAt: now });
     await db.insert(answerEvaluations).values({ id: crypto.randomUUID(), answerId, evaluationJson: JSON.stringify(evaluation), compositeScore: composite(evaluation), createdAt: now });
