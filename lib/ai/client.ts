@@ -18,24 +18,40 @@ function getClient() {
   return new OpenAI({ apiKey: config.apiKey, baseURL: config.baseURL });
 }
 
-export async function structuredResponse<T>(name: string, schema: ZodType<T>, instructions: string, input: string): Promise<T> {
+function retryDelayMs(error: unknown) {
+  const upstream = error as { status?: number; headers?: { get?: (name: string) => string | null }; message?: string } | null;
+  if (upstream?.status !== 429) return 350;
+  const retryAfter = Number(upstream.headers?.get?.('retry-after'));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.min(10_000, Math.ceil(retryAfter * 1_000) + 150);
+  const messageDelay = upstream.message?.match(/try again in ([\d.]+)s/i)?.[1];
+  return messageDelay ? Math.min(10_000, Math.ceil(Number(messageDelay) * 1_000) + 150) : 2_000;
+}
+
+export async function structuredResponse<T>(
+  name: string,
+  schema: ZodType<T>,
+  instructions: string,
+  input: string,
+  options: { model?: string; maxOutputTokens?: number } = {},
+): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const client = getClient();
       const response = await client.responses.parse({
-        model: getGroqConfig().textModel,
+        model: options.model || getGroqConfig().textModel,
         instructions,
         input,
         text: { format: zodTextFormat(schema, name) },
         reasoning: { effort: 'low' },
+        max_output_tokens: options.maxOutputTokens,
       });
       if (!response.output_parsed) throw new Error('Model returned no structured output');
       return schema.parse(response.output_parsed);
     } catch (error) {
       if (error instanceof AppError && error.code === 'AI_NOT_CONFIGURED') throw error;
       lastError = error;
-      if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 350));
+      if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, retryDelayMs(error)));
     }
   }
   console.error(`Groq ${name} failed`, lastError instanceof Error ? lastError.message : lastError);

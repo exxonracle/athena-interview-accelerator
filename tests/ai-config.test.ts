@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_GROQ_STT_MODEL,
+  DEFAULT_GROQ_INTERVIEW_MODEL,
   DEFAULT_GROQ_TEXT_MODEL,
   DEFAULT_GROQ_TTS_MODEL,
   DEFAULT_GROQ_TTS_VOICE,
@@ -14,6 +15,7 @@ describe('Groq configuration', () => {
       apiKey: undefined,
       baseURL: GROQ_BASE_URL,
       textModel: DEFAULT_GROQ_TEXT_MODEL,
+      interviewModel: DEFAULT_GROQ_INTERVIEW_MODEL,
       transcriptionModel: DEFAULT_GROQ_STT_MODEL,
       speechModel: DEFAULT_GROQ_TTS_MODEL,
       speechVoice: DEFAULT_GROQ_TTS_VOICE,

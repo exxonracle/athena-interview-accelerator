@@ -2,6 +2,8 @@ import type { AnswerEvaluation, InterviewLevel } from '@/lib/ai/schemas';
 
 export const INTERVIEW_STATES = ['SETUP', 'ROLE_ANALYSIS', 'CANDIDATE_ANALYSIS', 'READY', 'SCREENING', 'COMPETENCY', 'DEEP_DIVE', 'EVALUATING', 'COMPLETED'] as const;
 export type InterviewState = (typeof INTERVIEW_STATES)[number];
+export const QUESTIONS_PER_LEVEL = 1;
+export const TOTAL_INTERVIEW_QUESTIONS = 3;
 
 const transitions: Record<InterviewState, InterviewState[]> = {
   SETUP: ['ROLE_ANALYSIS'],
@@ -33,10 +35,6 @@ export function adjustDifficulty(current: number, evaluation: AnswerEvaluation, 
   return Math.max(bounds[level][0], Math.min(bounds[level][1], current + delta));
 }
 
-export function shouldAdvanceLevel(levelQuestionCount: number, coverage: string[], targetCompetencies: string[]) {
-  if (levelQuestionCount < 3) return false;
-  if (levelQuestionCount >= 4) return true;
-  const normalized = new Set(coverage.map((item) => item.toLowerCase()));
-  const covered = targetCompetencies.filter((item) => normalized.has(item.toLowerCase())).length;
-  return targetCompetencies.length === 0 || covered / targetCompetencies.length >= 0.7;
+export function shouldAdvanceLevel(levelQuestionCount: number) {
+  return levelQuestionCount >= QUESTIONS_PER_LEVEL;
 }

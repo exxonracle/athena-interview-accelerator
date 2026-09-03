@@ -28,7 +28,7 @@ Generic mock interviews rarely answer the question a candidate actually has: “
 - JD-grounded role analysis and resume-to-role comparison.
 - Explainable weighted Job Fit, separate from interview performance.
 - Explicit, persistent interview state machine.
-- Three adaptive interview levels with 9–12 questions total.
+- Three adaptive interview levels with three questions total—one focused question per level.
 - Dynamic difficulty, competency coverage, claim verification, and follow-ups.
 - Browser microphone recording and editable Groq Whisper transcription.
 - Groq Orpheus-generated interviewer speech with replay controls.
@@ -100,13 +100,12 @@ The candidate analyst receives the resume, original JD, and structured role. It 
 
 ### Dynamic questioning
 
-Athena generates only the initial question when a session starts. After every submitted answer it:
+Athena generates only the initial question when a session starts. After the first two submitted answers it processes the evaluation and next question together in one low-latency structured model call:
 
 1. Evaluates the answer into relevance, correctness, depth, reasoning, clarity, communication, completeness, confidence, role alignment, and behavioural evidence.
 2. Extracts strengths, weaknesses, claims, inconsistencies, and a follow-up direction.
 3. Updates competency coverage and difficulty.
-4. Decides whether to follow up, cover an unmet competency, or transition level.
-5. Generates exactly one next question with the complete grounded context.
+4. Transitions to the next level and generates exactly one question that targets the most valuable uncovered evidence.
 
 Screening tests motivation, ownership, communication, and basic fit. Competency adds applied technical and behavioural scenarios. Deep Dive challenges vague answers, metrics, trade-offs, edge cases, and inconsistencies.
 
@@ -120,7 +119,11 @@ SETUP → ROLE_ANALYSIS → CANDIDATE_ANALYSIS → READY
       → EVALUATING → COMPLETED
 ```
 
-Each level asks at least three and at most four questions. Athena moves after the minimum only when target coverage is sufficient; the fourth question closes the most important remaining gap. Difficulty is bounded by level and rises after strong answers or drops to isolate fundamentals after weak answers.
+Each level asks exactly one question, for three questions total. The Screening answer shapes the Competency question, and the Competency answer shapes the Deep Dive question. Difficulty is bounded by level and rises after strong answers or shifts toward fundamentals after weak answers. Existing sessions resume safely and adopt the shortened progression from their next submitted answer.
+
+### Latency strategy
+
+Role and candidate analysis use `openai/gpt-oss-120b` for extraction quality. Interactive interview turns and the final coaching narrative use `openai/gpt-oss-20b`, which Groq positions as its low-latency production model; the final detailed evaluation uses 120B for schema reliability. Athena also removes duplicated context, limits raw JD/resume excerpts to 2,500 characters each, and retains only the two relevant prior exchanges. The first two answers combine evaluation and next-question generation in one request; the final answer runs its evaluation and report requests in parallel on separate model capacity. Rate-limit retries respect Groq's requested delay instead of retrying immediately.
 
 ## Scoring methodology
 
@@ -208,7 +211,7 @@ Athena is configured for Cloudflare Sites with logical D1 binding `DB` in `.open
 1. Authenticate the Sites/Cloudflare deployment tooling.
 2. Create or connect the hosted D1 database through Sites.
 3. Add `GROQ_API_KEY` as a hosted runtime secret, never a client variable.
-4. Optionally set `GROQ_TEXT_MODEL`, `GROQ_STT_MODEL`, `GROQ_TTS_MODEL`, `GROQ_TTS_VOICE`, and canonical `SITE_URL`.
+4. Optionally set `GROQ_TEXT_MODEL`, `GROQ_INTERVIEW_MODEL`, `GROQ_STT_MODEL`, `GROQ_TTS_MODEL`, `GROQ_TTS_VOICE`, and canonical `SITE_URL`.
 5. Deploy the generated production build through Sites.
 6. Run a real JD/resume/voice smoke test against the deployed HTTPS origin.
 

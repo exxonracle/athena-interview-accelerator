@@ -3,8 +3,7 @@ import { z } from 'zod';
 import { getDb } from '@/db';
 import { ensureDatabase } from '@/db/init';
 import { analyses, answerEvaluations, applications, documents, interviewAnswers, interviewQuestions, interviewReports, interviewSessions } from '@/db/schema';
-import { evaluateAnswer } from '@/lib/ai/evaluate-answer';
-import { generateQuestion } from '@/lib/ai/generate-question';
+import { evaluateAnswer, evaluateAnswerAndGenerateQuestion } from '@/lib/ai/evaluate-answer';
 import { generateReportNarrative } from '@/lib/ai/generate-report';
 import type { AnswerEvaluation, CandidateAnalysis, InterviewLevel, JobFit, RoleAnalysis } from '@/lib/ai/schemas';
 import { adjustDifficulty, nextLevel, shouldAdvanceLevel } from '@/lib/interview/state-machine';
@@ -55,36 +54,48 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
       .leftJoin(answerEvaluations, eq(answerEvaluations.answerId, interviewAnswers.id))
       .where(eq(interviewQuestions.sessionId, sessionId)).orderBy(asc(interviewQuestions.sequence));
     const level = sessionRow.session.currentLevel as InterviewLevel;
-    const evaluation = await evaluateAnswer({
-      role, candidate, level, difficulty: question.difficulty, question: question.question,
-      expectedEvidence: JSON.parse(question.expectedEvidenceJson), answer: body.transcript,
-      priorHistory: historyRows.filter((row) => row.answer).map((row) => ({ question: row.question.question, answer: row.answer!.transcript })),
-    });
     const priorHistory = historyRows.map((row) => ({
-      question: row.question.question, answer: row.answer?.transcript, assessment: row.evaluation ? (JSON.parse(row.evaluation.evaluationJson) as AnswerEvaluation).assessment : undefined,
-      weaknesses: row.evaluation ? (JSON.parse(row.evaluation.evaluationJson) as AnswerEvaluation).weaknesses : undefined,
-      suggestedFollowUp: row.evaluation ? (JSON.parse(row.evaluation.evaluationJson) as AnswerEvaluation).suggestedFollowUp : undefined,
+      question: row.question.question,
+      answer: row.answer?.transcript ?? '',
+      evaluation: row.evaluation ? (() => {
+        const item = JSON.parse(row.evaluation.evaluationJson) as AnswerEvaluation;
+        return { assessment: item.assessment, strengths: item.strengths, weaknesses: item.weaknesses, suggestedFollowUp: item.suggestedFollowUp };
+      })() : undefined,
     }));
     const competencyKeys = JSON.parse(question.competencyKeysJson) as string[];
     const coverage = Array.from(new Set([...(JSON.parse(sessionRow.session.coverageJson) as string[]), ...competencyKeys]));
     const levelQuestionCount = historyRows.filter((row) => row.question.level === level).length;
-    const targets = level === 'SCREENING' ? [...role.behavioralCompetencies.slice(0, 2), 'motivation', 'communication'] : level === 'COMPETENCY' ? role.technicalCompetencies.slice(0, 4) : [...candidate.claimsToVerify.slice(0, 2), ...role.technicalCompetencies.slice(0, 2)];
-    const advance = shouldAdvanceLevel(levelQuestionCount, coverage, targets);
+    const advance = shouldAdvanceLevel(levelQuestionCount);
     const followingLevel = advance ? nextLevel(level) : level;
-    const updatedDifficulty = followingLevel && followingLevel !== level ? (followingLevel === 'COMPETENCY' ? 2 : 3) : adjustDifficulty(sessionRow.session.difficulty, evaluation, level);
     const answerId = crypto.randomUUID();
     const now = Date.now();
+    const answerContext = {
+      jobDescription: jd,
+      resume,
+      role,
+      candidate,
+      fit,
+      level,
+      difficulty: question.difficulty,
+      question: question.question,
+      expectedEvidence: JSON.parse(question.expectedEvidenceJson) as string[],
+      answer: body.transcript,
+      priorHistory: priorHistory.filter((item) => item.answer),
+    };
 
     if (!followingLevel) {
+      const reportEvidence = historyRows.filter((row) => row.answer && row.evaluation).map((row) => ({ question: row.question.question, answer: row.answer!.transcript, evaluation: JSON.parse(row.evaluation!.evaluationJson) }));
+      reportEvidence.push({ question: question.question, answer: body.transcript, evaluation: null });
+      const [evaluation, narrative] = await Promise.all([
+        evaluateAnswer(answerContext),
+        generateReportNarrative({ jobDescription: jd, resume, role, candidate, fit, questions: reportEvidence }),
+      ]);
       const storedItems = historyRows.filter((row) => row.answer && row.evaluation).map((row) => ({ level: row.question.level as InterviewLevel, evaluation: JSON.parse(row.evaluation!.evaluationJson) as AnswerEvaluation }));
       storedItems.push({ level, evaluation });
       const scores = calculateInterviewScores(storedItems);
       const criticalNames = new Set(role.requiredSkills.filter((skill) => skill.importance === 'critical').map((skill) => skill.name.toLowerCase()));
       const criticalMissing = fit.missingAreas.filter((item) => criticalNames.has(item.toLowerCase())).length;
       const readiness = calculateReadiness(scores.overallScore, fit.overallScore, criticalMissing);
-      const evidence = historyRows.filter((row) => row.answer && row.evaluation).map((row) => ({ question: row.question.question, answer: row.answer!.transcript, evaluation: JSON.parse(row.evaluation!.evaluationJson) }));
-      evidence.push({ question: question.question, answer: body.transcript, evaluation });
-      const narrative = await generateReportNarrative({ role, candidate, fit, questions: evidence, scores: { ...scores, readiness } });
       await db.insert(interviewAnswers).values({ id: answerId, questionId: question.id, clientSubmissionId: body.clientSubmissionId, transcript: body.transcript, inputMode: body.inputMode, durationMs: body.durationMs ?? null, wordCount: body.transcript.trim().split(/\s+/).length, fillerCount: body.transcript.match(fillers)?.length ?? 0, submittedAt: now });
       await db.insert(answerEvaluations).values({ id: crypto.randomUUID(), answerId, evaluationJson: JSON.stringify(evaluation), compositeScore: composite(evaluation), createdAt: now });
       await db.insert(interviewReports).values({ id: crypto.randomUUID(), sessionId, overallScore: scores.overallScore, readinessScore: readiness.score, readinessLabel: readiness.label, competencyJson: JSON.stringify(scores.competencies), narrativeJson: JSON.stringify(narrative), createdAt: now });
@@ -93,10 +104,11 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
       return Response.json({ completed: true, applicationId: sessionRow.application.id, evaluationSummary: evaluation.assessment });
     }
 
-    const generated = await generateQuestion({
-      jobDescription: jd, resume, role, candidate, fit, level: followingLevel, difficulty: updatedDifficulty, coverage,
-      history: [...priorHistory, { question: question.question, answer: body.transcript, assessment: evaluation.assessment, weaknesses: evaluation.weaknesses, suggestedFollowUp: evaluation.suggestedFollowUp }],
-    });
+    const turn = await evaluateAnswerAndGenerateQuestion({ ...answerContext, nextLevel: followingLevel, coverage });
+    const evaluation = turn.evaluation;
+    const generated = turn.nextQuestion;
+    const baseDifficulty = followingLevel === 'COMPETENCY' ? 2 : 3;
+    const updatedDifficulty = adjustDifficulty(baseDifficulty, evaluation, followingLevel);
     await db.insert(interviewAnswers).values({ id: answerId, questionId: question.id, clientSubmissionId: body.clientSubmissionId, transcript: body.transcript, inputMode: body.inputMode, durationMs: body.durationMs ?? null, wordCount: body.transcript.trim().split(/\s+/).length, fillerCount: body.transcript.match(fillers)?.length ?? 0, submittedAt: now });
     await db.insert(answerEvaluations).values({ id: crypto.randomUUID(), answerId, evaluationJson: JSON.stringify(evaluation), compositeScore: composite(evaluation), createdAt: now });
     const nextSequence = sessionRow.session.questionCount + 1;

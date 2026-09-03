@@ -131,6 +131,11 @@ export const reportNarrativeSchema = z.object({
   nextActions: z.array(z.string()).max(8),
 });
 
+export const answerTurnSchema = z.object({
+  evaluation: answerEvaluationSchema,
+  nextQuestion: interviewQuestionSchema,
+});
+
 export type RoleAnalysis = z.infer<typeof roleAnalysisSchema>;
 export type CandidateAnalysis = z.infer<typeof candidateAnalysisSchema>;
 export type JobFit = z.infer<typeof jobFitSchema>;

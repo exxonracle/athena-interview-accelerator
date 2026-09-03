@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AnswerEvaluation } from '@/lib/ai/schemas';
-import { adjustDifficulty, assertTransition, nextLevel, shouldAdvanceLevel } from '@/lib/interview/state-machine';
+import { adjustDifficulty, assertTransition, nextLevel, shouldAdvanceLevel, TOTAL_INTERVIEW_QUESTIONS } from '@/lib/interview/state-machine';
 
 const evaluation = { difficultyAdjustment: 'increase' } as AnswerEvaluation;
 
@@ -16,10 +16,10 @@ describe('interview state machine', () => {
     expect(nextLevel('DEEP_DIVE')).toBeNull();
   });
 
-  it('uses minimum, coverage, and maximum question rules', () => {
-    expect(shouldAdvanceLevel(2, ['communication'], ['communication'])).toBe(false);
-    expect(shouldAdvanceLevel(3, ['communication', 'motivation'], ['communication', 'motivation'])).toBe(true);
-    expect(shouldAdvanceLevel(4, [], ['system design'])).toBe(true);
+  it('advances after one question in each of the three levels', () => {
+    expect(shouldAdvanceLevel(0)).toBe(false);
+    expect(shouldAdvanceLevel(1)).toBe(true);
+    expect(TOTAL_INTERVIEW_QUESTIONS).toBe(3);
   });
 
   it('bounds difficulty by interview level', () => {
