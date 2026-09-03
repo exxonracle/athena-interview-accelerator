@@ -55,6 +55,9 @@ export async function structuredResponse<T>(
     }
   }
   console.error(`Groq ${name} failed`, lastError instanceof Error ? lastError.message : lastError);
+  if ((lastError as { status?: number } | null)?.status === 429) {
+    throw new AppError(429, 'Athena is briefly rate-limited. Wait a few seconds, then submit your answer again.', 'AI_RATE_LIMITED');
+  }
   throw new AppError(502, 'Athena could not complete this AI step. Please retry in a moment.', 'AI_RESPONSE_FAILED');
 }
 
